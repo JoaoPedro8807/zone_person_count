@@ -146,19 +146,40 @@ class PersonCounter:
         return self.side_averages.overall(fps=self.config._fps or None)
 
     def process(self, frame: np.ndarray):
-        predictions = self.model.predict(frame)
-        rects = [pred.rect for pred in predictions]
-        objects = self.update(rects)
+        predictions = self.model.track(frame)
+        has_tracker_ids = any(pred.track_id is not None for pred in predictions)
+
+        #se o tracker não retornar ids, usa o detector de id por distancia para associar os objetos entre os frames
+        if has_tracker_ids:
+            objects = OrderedDict()
+            self.object_side = OrderedDict()
+
+            for pred in predictions:
+                if pred.track_id is None:
+                    continue
+
+                centroid = self._compute_centroid(pred.rect)
+                objects[pred.track_id] = centroid
+                self.object_side[pred.track_id] = self._point_side(
+                    centroid,
+                    self.config._line_start,
+                    self.config._line_end,
+                )
+        else:
+            rects = [pred.rect for pred in predictions]
+            objects = self.update(rects)
+
         self.side_averages.observe(self.object_side)
 
         #desenha names e confidence nos boxes dos objetos
         for pred in predictions:
             x1, y1, x2, y2 = pred.rect
             confidence = pred.confidence
+            label_id = pred.track_id if pred.track_id is not None else "?"
             #cv2.rectangle(frame, (x1, y1), (x2, y2), (50, 200, 50), 2)
             cv2.putText(
                 frame,
-                f"person {confidence:.2f}",
+                f"ID {label_id} person {confidence:.2f}",
                 (x1, max(y1 - 10, 20)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,

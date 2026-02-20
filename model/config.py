@@ -4,6 +4,7 @@ class YOLOConfig:
 
     def __init__(self):
         self.model = 'yolo12s.pt'
+        self._tracker = 'bytetrack.yaml' #yolo já resolve o tracking apenas com a string
         self._confidence_threshold = 0.4
         self._iou_threshold = 0.45
         self._person_class_id = 0

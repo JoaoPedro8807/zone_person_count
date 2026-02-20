@@ -8,6 +8,7 @@ import numpy as np
 class PredictData:
     rect: tuple[int, int, int, int]
     confidence: float
+    track_id: int | None = None
         
 
 
@@ -47,5 +48,43 @@ class YOLOModel:
             detections.append(PredictData((int(x1), int(y1), int(x2), int(y2)), conf))
 
         return detections
+
+    def track(self, frame: np.ndarray, **kwargs) -> list[PredictData]:
+        confidence = kwargs.get("confidence", self.config._confidence_threshold)
+        iou = kwargs.get("iou", self.config._iou_threshold)
+        person_class_id = kwargs.get("class_id", self.config._person_class_id)
+        tracker = kwargs.get("tracker", self.config._tracker)
+
+        #TODO testar alguns parametros para melhorar o tracking
+        #https://docs.ultralytics.com/pt/modes/track/#tracker-arguments
+
+        results = self.model.track(
+            source=frame,
+            conf=confidence,
+            iou=iou,
+            classes=[person_class_id],
+            tracker=tracker,
+            persist=True,
+            verbose=False,
+        )
+
+        tracks: list[PredictData] = []
+        if not results:
+            return tracks
+
+        boxes = results[0].boxes
+        if boxes is None:
+            return tracks
+
+        for box in boxes:
+            if box.id is None:
+                continue
+
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            conf = float(box.conf[0].item())
+            track_id = int(box.id[0].item())
+            tracks.append(PredictData((int(x1), int(y1), int(x2), int(y2)), conf, track_id))
+
+        return tracks
     
 
