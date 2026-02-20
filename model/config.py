@@ -9,4 +9,5 @@ class YOLOConfig:
         self._person_class_id = 0
         self._line_start = (0, 680)
         self._line_end = (1900, 680)
+        self._fps = 30.0 # 30 fps default
 

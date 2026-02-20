@@ -1,19 +1,22 @@
 from model.yolo_model import YOLOModel
 from model.config import YOLOConfig
+from model.side_stats import SideAverages
 import cv2
 import numpy as np
 from collections import OrderedDict
 
 class PersonCounter:
-    def __init__(self, max_disappeared=50):
+    def __init__(self, max_disappeared=50, max_match_distance=80):
         self.model = YOLOModel()
         self.config = YOLOConfig()
         self.next_object_id = 0
         self.objects = OrderedDict()
         self.disappeared = OrderedDict()
         self.max_disappeared = max_disappeared
+        self.max_match_distance = max_match_distance
         self.track_history = OrderedDict()
         self.object_side = OrderedDict()
+        self.side_averages = SideAverages()
 
     @staticmethod
     def _compute_centroid(rect):
@@ -76,7 +79,13 @@ class PersonCounter:
 
         object_ids = list(self.objects.keys())
         object_centroids = list(self.objects.values())
-        distance = self._distance_matrix(object_centroids, input_centroids)
+        distance = self._distance_matrix(object_centroids, input_centroids)#distancia entre os objetos atuais e as novas detecções
+
+        #calcula a ordem de correspondência entre objetos e detecções com base na menor distância
+        #rows: índices dos objetos ordenados pela menor distância
+        #cols: índices das detecções correspondentes a cada objeto
+
+        #compara cada objeto com as detecções e associa o mais próximo, assim evitando associar um objeto com mais de uma detecção e associando ele com a detecção mais próxima possível    
 
         rows = distance.min(axis=1).argsort()
         cols = distance.argmin(axis=1)[rows]
@@ -87,12 +96,16 @@ class PersonCounter:
         for row, col in zip(rows, cols):
             if row in used_rows or col in used_cols:
                 continue
-
+            if distance[row, col] > self.max_match_distance:
+                continue
+            #atualiza o objeto com a nova posição da detecção associada
             object_id = object_ids[row]
             centroid = input_centroids[col]
             self.objects[object_id] = centroid
+
+            #zera desaparecimentos
             self.disappeared[object_id] = 0
-            self.track_history[object_id].append(centroid)
+            self.track_history[object_id].append(centroid) #att historico
             self.object_side[object_id] = self._point_side(
                 centroid,
                 self.config._line_start,
@@ -105,15 +118,14 @@ class PersonCounter:
         unused_rows = set(range(distance.shape[0])) - used_rows
         unused_cols = set(range(distance.shape[1])) - used_cols
 
-        if distance.shape[0] >= distance.shape[1]:
-            for row in unused_rows:
-                object_id = object_ids[row]
-                self.disappeared[object_id] += 1
-                if self.disappeared[object_id] > self.max_disappeared:
-                    self.deregister(object_id)
-        else:
-            for col in unused_cols:
-                self.register(input_centroids[col])
+        for row in unused_rows:
+            object_id = object_ids[row]
+            self.disappeared[object_id] += 1
+            if self.disappeared[object_id] > self.max_disappeared:
+                self.deregister(object_id)
+
+        for col in unused_cols:
+            self.register(input_centroids[col])
 
         return self.objects
 
@@ -127,11 +139,19 @@ class PersonCounter:
                 outside += 1
         return inside, outside
 
+    def get_side_averages_per_id(self, fps=None):
+        return self.side_averages.per_id(fps=self.config._fps or None)
+    
+    def get_side_averages_overall(self, fps=None):
+        return self.side_averages.overall(fps=self.config._fps or None)
+
     def process(self, frame: np.ndarray):
         predictions = self.model.predict(frame)
         rects = [pred.rect for pred in predictions]
         objects = self.update(rects)
+        self.side_averages.observe(self.object_side)
 
+        #desenha names e confidence nos boxes dos objetos
         for pred in predictions:
             x1, y1, x2, y2 = pred.rect
             confidence = pred.confidence
@@ -142,7 +162,7 @@ class PersonCounter:
                 (x1, max(y1 - 10, 20)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.5,
-                (50, 200, 50),
+                (255, 255, 255),
                 1,
             )
 
@@ -206,4 +226,8 @@ if __name__ == "__main__":
 
     cap.release()    
     cv2.destroyAllWindows()
+    print("\nMédia por ID:")
+    print(counter.get_side_averages_per_id())
+    print("\nMédia geral:")
+    print(counter.get_side_averages_overall())
     print("fim..")

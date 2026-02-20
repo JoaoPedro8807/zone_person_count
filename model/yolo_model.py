@@ -1,14 +1,13 @@
+from dataclasses import dataclass
 from model.config import YOLOConfig    
 from ultralytics import YOLO       
 import numpy as np 
 
 
+@dataclass
 class PredictData:
     rect: tuple[int, int, int, int]
     confidence: float
-    def __init__(self, rect: tuple[int, int, int, int], confidence: float) -> None:
-        self.rect = rect
-        self.confidence = confidence
         
 
 
@@ -17,7 +16,6 @@ class YOLOModel:
         self.config = YOLOConfig()
         self.model = YOLO(self.config.model)
 
-    
 
     def predict(self, frame: np.ndarray, **kwargs) -> list[PredictData]:
         confidence = kwargs.get("confidence", self.config._confidence_threshold)
